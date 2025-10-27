@@ -19,7 +19,6 @@ void init_sensors(){
     	sensors.gyro.gyro_valeure_decimal[i] = 0;
     	sensors.gyro.gyro_offset[i] = 0;
     	sensors.accel.accelXYZ[i] = 0;
-    	sensors.accel.accel_offset[i] = 0;
     }
 
     sensors.coordinates.latitude = 0.0f;
@@ -33,35 +32,37 @@ void init_sensors(){
 
 
 void calibrate_sensors() {
-    int gyro_temp[3] = {0};
-    int accel_temp[3] = {0};
+    int32_t gyro_sum[3] = {0};
 
-    printf("Calibration... \r\n");
+    printf("=== Début de la calibration... ===\r\n");
+
+    for (int j = 0; j < 3; j++) {
+        set_gyro_offset(j, 0);
+    }
 
     for (int i = 0; i < CALIBRATION_SAMPLES; i++) {
         float gyro[3];
-        int16_t accel[3];
-
         BSP_GYRO_GetXYZ(gyro);
-        BSP_ACCELERO_AccGetXYZ(accel);
 
         for (int j = 0; j < 3; j++) {
-        	set_accel_offset(j, get_accel_offset(j)+accel[j]);
-        	set_gyro_offset(j, get_gyro_offset(j)+ (int)gyro[j]);
+            gyro_sum[j] += (int32_t)gyro[j];
         }
-        HAL_Delay(50);
+
+        HAL_Delay(10);
     }
 
     for (int j = 0; j < 3; j++) {
-    	set_accel_offset(j, get_accel_offset(j)/CALIBRATION_SAMPLES);
-    	set_gyro_offset(j, get_gyro_offset(j)/CALIBRATION_SAMPLES);
+        set_gyro_offset(j, (int)(gyro_sum[j] / CALIBRATION_SAMPLES));
     }
 
-    printf("Calibration terminée !\r\n");
-
-    printf("Gyro offset : X=%d, Y=%d, Z=%d\r\n", get_gyro_offset(0), get_gyro_offset(1), get_gyro_offset(2));
-    printf("Accel offset : X=%d, Y=%d, Z=%d\r\n", get_accel_offset(0), get_accel_offset(2), get_accel_offset(2));
+    printf("=== Calibration terminée ===\r\n");
+    printf("Gyro offset : X=%d, Y=%d, Z=%d\r\n",
+            get_gyro_offset(0), get_gyro_offset(1), get_gyro_offset(2));
 }
+
+
+
+
 
 int get_gyro_int(int axis){          // axe: 0=x,1=y,2=z
     if(axis >= 0 && axis < 3)
@@ -86,11 +87,7 @@ int get_gyro_offset(int axis){
         return sensors.gyro.gyro_offset[axis];
     return 0;
 }
-int get_accel_offset(int axis){
-    if(axis >= 0 && axis < 3)
-        return sensors.accel.accel_offset[axis];
-    return 0;
-}
+
 
 float get_latitude(){
     return sensors.coordinates.latitude;
@@ -117,10 +114,6 @@ void set_gyro_float(int axis, int value){
 void set_gyro_offset(int axis, int value){
     if(axis >= 0 && axis < 3)
         sensors.gyro.gyro_offset[axis] = value;
-}
-void set_accel_offset(int axis, int value){
-    if(axis >= 0 && axis < 3)
-        sensors.accel.accel_offset[axis] = value;
 }
 
 void set_accel(int axis, int value){
@@ -158,7 +151,7 @@ void setAccelXYZ(){
 	int16_t pDataXYZ[3] = {0};
 	BSP_ACCELERO_AccGetXYZ(pDataXYZ);
 	for(int i = 0 ; i < 3 ; i++){
-		set_accel(i, pDataXYZ[i] - get_accel_offset(i)) ;
+		set_accel(i, pDataXYZ[i]) ;
 	}
 }
 void setFreq(){
@@ -176,5 +169,7 @@ void setGPSCoordinate(){
 	//set_latitude(valeur_latitude)
 
 }
+
+
 
 

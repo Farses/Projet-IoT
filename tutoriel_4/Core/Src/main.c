@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "stm32l475e_iot01.h"
 #include "capteurs.h"
+#include "traitement_donnees.h"
 
 #include <wifi.h>
 #include <math.h>
@@ -201,10 +202,6 @@ int main(void)
 
 
 
-	int tmpInt1 ;
-	float tmpFrac ;
-	int tmpInt2 ;
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -243,13 +240,6 @@ int main(void)
 
   init_sensors() ;
 
-
-  printf( "TCP Client Instructions :\n\r");
-  printf( "1- Make sure your Phone is connected to the same network that\n\r");
-  printf( " you configured using the Configuration Access Point.\n\r");
-  printf( "2- Create a server by using the android application TCP Server\n\r");
-  printf( " with port(8002).\n\r");
-  printf( "3- Get the Network Name or IP Address of your Android from the step 2.\n");
   /*Initialize WIFI module */
 
   if (wifi_connect()==-1)  {
@@ -270,15 +260,29 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3*/
-	  if(Socket2 != -1){
+
+	  setAccelXYZ();
+	  printf("ACCEL X: %.2f g, ACCEL Y: %.2f g, ACCEL Z: %.2f g \r\n\n", accel_raw_to_g(get_accel(0)), accel_raw_to_g(get_accel(1)), accel_raw_to_g(get_accel(2)));
+
+	  printf("Magnitude : %.3f \r\n", vector_magnitude_g(get_accel(0), get_accel(1), get_accel(2)));
+	  printf("Tilt ratio : %.3f \r\n\n", tilt_ratio(get_accel(0), get_accel(1), get_accel(2)));
+	  printf("--------------------------------------------------------------------------------\n");
+
+	  HAL_Delay(200) ;
+
+	  /*if(Socket2 != -1){
 
 		  setGyroXYZ();
 		  setAccelXYZ();
+
+		  //printf("GYRO X: %d, GYRO Y: %d, GYRO Z: %d \r\n", get_gyro_int(0), get_gyro_int(1), get_gyro_int(2));
+		  printf("ACCEL X: %d, ACCEL Y: %d, ACCEL Z: %d \r\n", get_accel(0), get_accel(1), get_accel(2));
+
 		  //setFreq(); fréquence cardiaque  à faire
 		  //setGPSCoordinate() ; GPS coordonnées à faire
 
-
-		  /*ret = write_data_TS(&Socket2, &Datalen, 6, get_gyro_int(0),  get_gyro_int(1),  get_gyro_int(2), get_accel(0), get_accel(1), get_accel(2)) ;
+		  HAL_Delay(100) ;
+		  ret = write_data_TS(&Socket2, &Datalen, 6, get_gyro_int(0),  get_gyro_int(1),  get_gyro_int(2), get_accel(0), get_accel(1), get_accel(2)) ;
 
 		  if (ret != WIFI_STATUS_OK){
 			  printf("> ERROR : Failed to Send Data, connection closed\n\r");
@@ -288,8 +292,6 @@ int main(void)
 
 			  		resolve_hostname("api.thingspeak.com",RemoteIP2);
 			  		Socket2 = Server_Connect(1, RemoteIP2, RemotePORT2) ;
-
-
 			  }
 
 
@@ -297,73 +299,14 @@ int main(void)
 		  else {
 			  printf("request sent to thingspeak.com... status %d\r\n",(int)ret);//
 			  HAL_Delay (5000);
-		  }*/
-	  }
-
-
-
-
-		float pGyroDataXYZ[3] = {0};
-		int16_t pDataXYZ[3] = {0};
-
-	/*
-	  if(Socket != -1){
-	   ret = WIFI_ReceiveData(Socket, (uint8_t *)RxData, sizeof(RxData)-1, &Datalen, WIFI_READ_TIMEOUT);
-	   if(ret == WIFI_STATUS_OK){
-		   if(Datalen > 0){
-			   RxData[Datalen]=0;
-			   printf("Received: %s\n\r",RxData);
-			   switch(RxData[0]){
-			   	   case 't':
-			   		   sensor_value = BSP_TSENSOR_ReadTemp();
-			   		   tmpInt1 = sensor_value;
-			   		   tmpFrac = sensor_value - tmpInt1;
-			   		   tmpInt2 = trunc(tmpFrac * 100);
-			   		   sprintf(TxData," TEMPERATURE = %d.%02d\n\r", tmpInt1,tmpInt2);
-			   		   break ;
-			   	   case 'h':
-			   		   sensor_value = BSP_HSENSOR_ReadHumidity();
-			   		   tmpInt1 = sensor_value;
-			   		   tmpFrac = sensor_value - tmpInt1;
-			   		   tmpInt2 = trunc(tmpFrac * 100);
-			   		   sprintf(TxData," HUMIDITY = %d.%02d\n\r", tmpInt1,tmpInt2);
-			   		   break ;
-			   	   case 'p':
-			   		   sensor_value = BSP_PSENSOR_ReadPressure();
-			   		   tmpInt1 = sensor_value;
-			   		   tmpFrac = sensor_value - tmpInt1;
-			   		   tmpInt2 = trunc(tmpFrac * 100);
-			   		   sprintf(TxData," PRESSURE = %d.%02d\n\r", tmpInt1, tmpInt2);
-			   		   break ;
-			   	   case 'm':
-			   		   BSP_MAGNETO_GetXYZ(pDataXYZ);
-			   		   sprintf(TxData," MAGNETO_X,Y,Z = %d %d %d \n\r", pDataXYZ[0],pDataXYZ[1],pDataXYZ[2]);
-			   		   break ;
-			   	   case 'g':
-			   		   BSP_GYRO_GetXYZ(pGyroDataXYZ);
-			   		   sprintf(TxData," GYRO_X,Y,Z = %d %d %d \n\r", (int)(pGyroDataXYZ[0]*100.0),(int)(pGyroDataXYZ[1]*100),(int)(pGyroDataXYZ[2]*100));
-			   		   break ;
-			   	   case 'a':
-			   		   BSP_ACCELERO_AccGetXYZ(pDataXYZ);
-			   		   sprintf(TxData," ACCELERO_X,Y,Z = %d %d %d \n\r",pDataXYZ[0],pDataXYZ[1],pDataXYZ[2]);
-			   		   break ;
-			   	   default:
-			   		   sprintf(TxData,"Tié le tigre du bengale\n\r");
-			   		   break ;
-			   }
-			   ret = WIFI_SendData(Socket, (uint8_t *)TxData, strlen(TxData), &Datalen, WIFI_WRITE_TIMEOUT);
-			   if (ret != WIFI_STATUS_OK)
-			   {
-				   printf("> ERROR : Failed to Send Data, connectionclosed\n\r");
-				   break;
-			   }
-		   }
-	   }
-	   else{
-		   printf("> ERROR : Failed to Receive Data, connection closed\n\r");
-		   break;
-	   }
+		  }
 	  }*/
+
+
+
+
+
+
   }
   /* USER CODE END 3 */
 }
@@ -967,3 +910,72 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
+
+
+
+
+
+
+
+
+
+
+
+/*
+	  if(Socket != -1){
+	   ret = WIFI_ReceiveData(Socket, (uint8_t *)RxData, sizeof(RxData)-1, &Datalen, WIFI_READ_TIMEOUT);
+	   if(ret == WIFI_STATUS_OK){
+		   if(Datalen > 0){
+			   RxData[Datalen]=0;
+			   printf("Received: %s\n\r",RxData);
+			   switch(RxData[0]){
+			   	   case 't':
+			   		   sensor_value = BSP_TSENSOR_ReadTemp();
+			   		   tmpInt1 = sensor_value;
+			   		   tmpFrac = sensor_value - tmpInt1;
+			   		   tmpInt2 = trunc(tmpFrac * 100);
+			   		   sprintf(TxData," TEMPERATURE = %d.%02d\n\r", tmpInt1,tmpInt2);
+			   		   break ;
+			   	   case 'h':
+			   		   sensor_value = BSP_HSENSOR_ReadHumidity();
+			   		   tmpInt1 = sensor_value;
+			   		   tmpFrac = sensor_value - tmpInt1;
+			   		   tmpInt2 = trunc(tmpFrac * 100);
+			   		   sprintf(TxData," HUMIDITY = %d.%02d\n\r", tmpInt1,tmpInt2);
+			   		   break ;
+			   	   case 'p':
+			   		   sensor_value = BSP_PSENSOR_ReadPressure();
+			   		   tmpInt1 = sensor_value;
+			   		   tmpFrac = sensor_value - tmpInt1;
+			   		   tmpInt2 = trunc(tmpFrac * 100);
+			   		   sprintf(TxData," PRESSURE = %d.%02d\n\r", tmpInt1, tmpInt2);
+			   		   break ;
+			   	   case 'm':
+			   		   BSP_MAGNETO_GetXYZ(pDataXYZ);
+			   		   sprintf(TxData," MAGNETO_X,Y,Z = %d %d %d \n\r", pDataXYZ[0],pDataXYZ[1],pDataXYZ[2]);
+			   		   break ;
+			   	   case 'g':
+			   		   BSP_GYRO_GetXYZ(pGyroDataXYZ);
+			   		   sprintf(TxData," GYRO_X,Y,Z = %d %d %d \n\r", (int)(pGyroDataXYZ[0]*100.0),(int)(pGyroDataXYZ[1]*100),(int)(pGyroDataXYZ[2]*100));
+			   		   break ;
+			   	   case 'a':
+			   		   BSP_ACCELERO_AccGetXYZ(pDataXYZ);
+			   		   sprintf(TxData," ACCELERO_X,Y,Z = %d %d %d \n\r",pDataXYZ[0],pDataXYZ[1],pDataXYZ[2]);
+			   		   break ;
+			   	   default:
+			   		   sprintf(TxData,"Tié le tigre du bengale\n\r");
+			   		   break ;
+			   }
+			   ret = WIFI_SendData(Socket, (uint8_t *)TxData, strlen(TxData), &Datalen, WIFI_WRITE_TIMEOUT);
+			   if (ret != WIFI_STATUS_OK)
+			   {
+				   printf("> ERROR : Failed to Send Data, connectionclosed\n\r");
+				   break;
+			   }
+		   }
+	   }
+	   else{
+		   printf("> ERROR : Failed to Receive Data, connection closed\n\r");
+		   break;
+	   }
+	  }*/

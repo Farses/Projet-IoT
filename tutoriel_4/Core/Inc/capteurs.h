@@ -14,6 +14,10 @@
 #include "stm32l475e_iot01_magneto.h"
 #include "stm32l475e_iot01_gyro.h"
 #include "stm32l475e_iot01_accelero.h"
+#include <stdbool.h>
+#include <math.h>
+
+
 #define CALIBRATION_SAMPLES 250
 
 typedef struct{
@@ -24,7 +28,6 @@ typedef struct{
 
 typedef struct{
 	int accelXYZ[3] ;
-	int accel_offset[3] ;
 }AccelXYZ;
 
 typedef struct{
@@ -54,7 +57,6 @@ float get_latitude();
 float get_longitude();
 int get_freq_cardiaque();
 int get_gyro_offset(int axis);
-int get_accel_offset(int axis);
 
 void set_gyro_int(int axis, int value);
 void set_gyro_float(int axis, int value);
@@ -62,7 +64,6 @@ void set_accel(int axis, int value);
 void set_latitude(float value);
 void set_longitude(float value);
 void set_freq_cardiaque(int value);
-void set_accel_offset(int axis, int value);
 void set_gyro_offset(int axis, int value);
 
 void setGyroXYZ();
