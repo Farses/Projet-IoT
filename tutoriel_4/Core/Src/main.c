@@ -25,11 +25,14 @@
 #include "capteurs.h"
 #include "traitement_donnees.h"
 
+
 #include <wifi.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdlib.h>
+#include <time.h>
 
 
 int32_t write_data_TS(int32_t* socket, uint16_t* datalen, int nb_parameters, ...);
@@ -47,18 +50,30 @@ int32_t write_data_TS(int32_t* socket, uint16_t* datalen, int nb_parameters, ...
 
 #define SSID "Javakjian"
 #define PASSWORD "abcdefgh"
+
+
 uint8_t RemoteIP[] = {10,34,124,150};
 uint16_t RemotePORT = 8002;
+
+
+
+
 uint8_t RemoteIP2[4] ;
 uint16_t RemotePORT2 = 80;
-#define thingspeak_APIkey_write "7RMGSWUJZXC89SFR"
+#define thingspeak_APIkey_write "RH1GKC7P5NRDX6AJ"
 
-#define thingspeak_APIkey_read "PS1YINWLA770M1BS"
+#define thingspeak_APIkey_read "O729N63F5UVJ6IOZ"
 
 
 #define WIFI_WRITE_TIMEOUT 10000
 #define WIFI_READ_TIMEOUT 10000
 #define CONNECTION_TRIAL_MAX 10
+
+// --- Timing Constants ---
+#define SENSOR_READ_INTERVAL_MS 10   // Read sensors every 1000ms
+#define THINGSPEAK_SEND_INTERVAL_MS 30000 // Send every 60 seconds
+#define THINGSPEAK_MIN_SEND_INTERVAL_MS 20000
+
 
 
 /* USER CODE END PD */
@@ -84,7 +99,9 @@ PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 /* USER CODE BEGIN PV */
 extern SPI_HandleTypeDef hspi;
-
+int initial_accel_x = 0;
+int initial_accel_y = 0;
+int initial_accel_z = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -108,10 +125,6 @@ int wifi_connect(){
 	int wifi_ok=0 ;
 	uint8_t MAC_Addr[6] = {0};
 	uint8_t IP_Addr[4] = {0};
-	// Assure que NSS est haut
-
-
-
 	if(WIFI_Init() == WIFI_STATUS_OK) {
 
 		printf("> WIFI Module Initialized.\n\r");
@@ -159,6 +172,7 @@ int Server_Connect(int Socket, uint8_t RemoteIP[], uint16_t RemotePORT){
 	return(Socket);
 }
 
+
 bool resolve_hostname(char *hostname, uint8_t *RemoteIP ){
 /* get the host address */
 	printf("\nResolve hostname %s\r\n", hostname);
@@ -200,7 +214,26 @@ int main(void)
 	float sensor_value ;
 
 
+	// Variables for current readings and deltas
+	int current_accel_x, current_accel_y, current_accel_z;
+	int delta_accel_x, delta_accel_y, delta_accel_z;
 
+	// Variables for magnitude (if still needed)
+	float accel_magnitude = 0.0f;
+	long long accel_x_sq, accel_y_sq, accel_z_sq;
+
+	int chute = 0; // Current fall status (0 or 1)
+	bool fall_detected_flag = false; // Flag to indicate a NEW fall was just detected
+
+	uint32_t last_sensor_read_time = 0;
+	uint32_t last_thingspeak_send_time = 0;
+	uint32_t current_time = 0;
+
+	// --- Snapshot variables to store data AT THE MOMENT OF THE FALL ---
+	int fall_data_gyro_x, fall_data_gyro_y, fall_data_gyro_z;
+	int fall_data_delta_x, fall_data_delta_y, fall_data_delta_z;
+	int fall_data_chute; // This will always be 1
+	int fall_data_magnitude;
 
   /* USER CODE END 1 */
 
@@ -239,6 +272,7 @@ int main(void)
   BSP_ACCELERO_Init();
 
   init_sensors() ;
+  configure_user_height(173.5f) ;
 
   /*Initialize WIFI module */
 
@@ -249,6 +283,12 @@ int main(void)
   	    //Socket =  Server_Connect(0, RemoteIP, RemotePORT) ;
 
   }
+
+  float ax_before, ay_before, az_before = 0 ;
+
+  float ax = 0;
+  float ay = 0;
+  float az = 0;
 
 
 
@@ -261,46 +301,194 @@ int main(void)
 
     /* USER CODE BEGIN 3*/
 
+
+	  uint32_t current_time = HAL_GetTick();  // ← C'EST TOUT !
+
+
 	  setAccelXYZ();
-	  printf("ACCEL X: %.2f g, ACCEL Y: %.2f g, ACCEL Z: %.2f g \r\n\n", accel_raw_to_g(get_accel(0)), accel_raw_to_g(get_accel(1)), accel_raw_to_g(get_accel(2)));
-
-	  printf("Magnitude : %.3f \r\n", vector_magnitude_g(get_accel(0), get_accel(1), get_accel(2)));
-	  printf("Tilt ratio : %.3f \r\n\n", tilt_ratio(get_accel(0), get_accel(1), get_accel(2)));
-	  printf("--------------------------------------------------------------------------------\n");
-
-	  HAL_Delay(200) ;
-
-	  /*if(Socket2 != -1){
-
-		  setGyroXYZ();
-		  setAccelXYZ();
-
-		  //printf("GYRO X: %d, GYRO Y: %d, GYRO Z: %d \r\n", get_gyro_int(0), get_gyro_int(1), get_gyro_int(2));
-		  printf("ACCEL X: %d, ACCEL Y: %d, ACCEL Z: %d \r\n", get_accel(0), get_accel(1), get_accel(2));
-
-		  //setFreq(); fréquence cardiaque  à faire
-		  //setGPSCoordinate() ; GPS coordonnées à faire
-
-		  HAL_Delay(100) ;
-		  ret = write_data_TS(&Socket2, &Datalen, 6, get_gyro_int(0),  get_gyro_int(1),  get_gyro_int(2), get_accel(0), get_accel(1), get_accel(2)) ;
-
-		  if (ret != WIFI_STATUS_OK){
-			  printf("> ERROR : Failed to Send Data, connection closed\n\r");
-			  printf("> TRYING TO RECONNECT\n\r");
-
-			  if (wifi_connect()==-1)  {
-
-			  		resolve_hostname("api.thingspeak.com",RemoteIP2);
-			  		Socket2 = Server_Connect(1, RemoteIP2, RemotePORT2) ;
-			  }
+	  setGyroXYZ() ;
 
 
-		  }
-		  else {
-			  printf("request sent to thingspeak.com... status %d\r\n",(int)ret);//
-			  HAL_Delay (5000);
-		  }
-	  }*/
+
+	  int16_t gx_raw = get_gyro_int(0);
+	  int16_t gy_raw = get_gyro_int(1);
+	  int16_t gz_raw = get_gyro_int(2);
+
+	  float ax_raw = get_accel(0);
+	  float ay_raw = get_accel(1);
+	  float az_raw = get_accel(2);
+
+
+	  ax_before = ax ;
+	  ay_before = ay ;
+	  az_before = az ;
+
+	   ax = accel_raw_to_g(ax_raw);
+	   ay = accel_raw_to_g(ay_raw);
+	   az = accel_raw_to_g(az_raw);
+
+	  float gx = gyro_raw_to_dps(gx_raw);
+	  float gy = gyro_raw_to_dps(gy_raw);
+	  float gz = gyro_raw_to_dps(gz_raw);
+
+
+	  int previous_chute_state = chute; // Store previous state
+	  int chute_detected = 0 ;
+
+
+	  if (current_time - last_sensor_read_time >= SENSOR_READ_INTERVAL_MS) {
+	  		  last_sensor_read_time = current_time; // Update last read time
+
+
+	  		  current_accel_x = get_accel(0);
+	  		  current_accel_y = get_accel(1);
+	  		  current_accel_z = get_accel(2);
+
+	  		  delta_accel_x = current_accel_x - initial_accel_x;
+	  		  delta_accel_y = current_accel_y - initial_accel_y;
+	  		  delta_accel_z = current_accel_z - initial_accel_z;
+
+	  		  accel_x_sq = (long long)delta_accel_x * delta_accel_x; // Use current accel for magnitude
+	  		  accel_y_sq = (long long)delta_accel_y * delta_accel_y;
+	  		  accel_z_sq = (long long)delta_accel_z * delta_accel_z;
+	  		  accel_magnitude = sqrtf((float)(accel_x_sq + accel_y_sq + accel_z_sq));
+
+	  		  // --- Fall Detection Logic (Replace simulation with your actual logic) ---
+	  		if (detect_fall(current_time)) {
+	  			  	  chute = 1;
+	  			  	  chute_detected = 1 ;
+	  			  } else {
+	  				  chute = 0;
+	  			  }
+
+	  		  // --- End of Fall Detection Logic ---
+
+	  		  // Set the flag and TAKE DATA SNAPSHOT if a *new* fall was just detected
+	  		  if (chute == 1 && previous_chute_state == 0) {
+	  			  // Only latch data if a fall is not already pending to be sent
+	  			  if (!fall_detected_flag) {
+	  				  fall_detected_flag = true;
+	  				  printf("\n *** FALL DETECTED! (FLAG SET & DATA LATCHED) *** \n");
+
+	  				  // --- Take the snapshot of the data AT THIS MOMENT ---
+	  				  fall_data_gyro_x = get_gyro_int(0);
+	  				  fall_data_gyro_y = get_gyro_int(1);
+	  				  fall_data_gyro_z = get_gyro_int(2);
+	  				  fall_data_delta_x = delta_accel_x;
+	  				  fall_data_delta_y = delta_accel_y;
+	  				  fall_data_delta_z = delta_accel_z;
+	  				  fall_data_chute = 1; // Explicitly set to 1
+	  				  fall_data_magnitude = (int)accel_magnitude;
+	  				chute_detected = 0 ;
+	  			  }
+	  		  }
+
+	  		  // Logs (Optional, can be removed to save time in loop)
+	  		   /*
+	  		  printf("---------------------------------------------------------------------------------\r\n");
+	  		   printf("Time: %lu ms\r\n", current_time);
+	  		   printf("GYRO X: %d, GYRO Y: %d, GYRO Z: %d \r\n", get_gyro_int(0), get_gyro_int(1), get_gyro_int(2));
+	  		   printf("DELTA ACCEL X: %d, DELTA ACCEL Y: %d, DELTA ACCEL Z: %d \r\n", delta_accel_x, delta_accel_y, delta_accel_z);
+	  		   printf("ACCEL Magnitude: %.2f\r\n", accel_magnitude);
+	  		   printf("Current Fall Status: %d\r\n", chute);
+	  		   */
+	  		  // printf("DELTA ACCEL X: %d, DELTA ACCEL Y: %d, DELTA ACCEL Z: %d \r\n", delta_accel_x, delta_accel_y, delta_accel_z);
+	  		  // printf("ACCEL Magnitude: %.2f\r\n", accel_magnitude);
+	  	  } // End of sensor reading block
+
+
+	  	  // --- 2. ThingSpeak Sending Logic ---
+
+	  	  bool attempt_send = false; // Should we consider sending now?
+	  	  bool is_fall_event_trigger = false; // Was the trigger a fall?
+
+	  	  // Condition 1: New fall detected?
+	  	  if (fall_detected_flag) {
+	  		  attempt_send = true;
+	  		  is_fall_event_trigger = true;
+	  		  printf("Send Reason: Fall detected!\r\n");
+	  	  }
+
+	  	  // Condition 2: Regular send interval elapsed?
+	  	  if (current_time - last_thingspeak_send_time >= THINGSPEAK_SEND_INTERVAL_MS) {
+	  		  attempt_send = true;
+	  		  is_fall_event_trigger = false;
+	  		  printf("Send Reason: Regular interval (%lu ms).\r\n", THINGSPEAK_SEND_INTERVAL_MS);
+	  	  }
+
+	  	  // --- Check Rate Limit and Attempt Send ---
+	  	  if (attempt_send) {
+	  		  // Check if minimum interval since LAST successful send has passed
+	  		  if (current_time - last_thingspeak_send_time >= THINGSPEAK_MIN_SEND_INTERVAL_MS) {
+
+	  			  if (Socket2 != -1) {
+
+	  				  if (is_fall_event_trigger) {
+	  					  // --- Send the LATCHED FALL DATA ---
+	  					  printf("Attempting Send - Reason: Fall Event (using latched data)\r\n");
+	  					  ret = write_data_TS(&Socket2, &Datalen, 8,
+	  										  fall_data_gyro_x, fall_data_gyro_y, fall_data_gyro_z,
+	  										  fall_data_delta_x, fall_data_delta_y, fall_data_delta_z,
+	  										  fall_data_chute, // This will be 1
+	  										  fall_data_magnitude);
+	  				  } else {
+	  					  // --- Send the CURRENT data (regular update) ---
+	  					  printf("Attempting Send - Reason: Regular Interval (using current data)\r\n");
+	  					  ret = write_data_TS(&Socket2, &Datalen, 8,
+	  										  get_gyro_int(0), get_gyro_int(1), get_gyro_int(2),
+	  										  delta_accel_x, delta_accel_y, delta_accel_z,
+	  										  chute, // This will be 0
+	  										  (int)accel_magnitude);
+	  				  }
+
+	  				  // --- Handle Send Result ---
+	  				  if (ret == WIFI_STATUS_OK) {
+	  					  printf("Send successful to thingspeak.com... status %ld\r\n", ret);
+	  					  last_thingspeak_send_time = HAL_GetTick(); // Update time of SUCCESSFUL send
+
+	  					  // If this send was for a fall, reset the flag
+	  					  if (is_fall_event_trigger) {
+	  						  fall_detected_flag = false;
+	  						  printf("Fall flag reset after successful send.\r\n");
+	  					  }
+	  				  } else {
+	  					  printf("> ERROR : Failed to Send Data (%ld), connection closed\n\r", ret);
+	  					  WIFI_CloseClientConnection(Socket2);
+	  					  Socket2 = -1;
+	  					  // Reconnect logic will be handled below
+	  				  }
+	  			  } else {
+	  				   printf("Attempt Send: Socket disconnected, delaying send.\r\n");
+	  				   // Reconnect logic will be handled below
+	  			  }
+	  		  } else {
+	  			  // Minimum interval not yet passed
+	  			  // Print this message only if a send was actually attempted
+	  		  }
+	  	  } // End of attempt_send block
+
+
+
+	  	if ((Socket2 == -1) && (current_time - last_thingspeak_send_time >= 5000)) {
+			  last_thingspeak_send_time = current_time;
+			  WIFI_CloseClientConnection(Socket2);
+			  if (wifi_connect() == -1) {
+					printf("Wi-Fi not connected. Fixing hostname...\r\n");
+					if(resolve_hostname("api.thingspeak.com",RemoteIP2)) {
+						Socket2 = Server_Connect(1, RemoteIP2, RemotePORT2) ;
+						if (Socket2 != -1) {
+						   last_thingspeak_send_time = HAL_GetTick();
+						   printf("Reconnected to Thingspeak.\r\n");
+						}
+					} else {
+						 printf("> ERROR: Failed to solve hostname in reconnection.\r\n");
+					}
+			   } else {
+				   printf("> ERROR: Failed to find WiFi.\r\n");
+			   }
+
+	  		  HAL_Delay(50); // e.g., 50ms
+	  }
 
 
 
